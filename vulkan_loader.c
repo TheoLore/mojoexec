@@ -1,6 +1,5 @@
 //
-// Created by maks on 10.04.2026.
-// Extended for PanVK (Mali G52 jm-v7) + unified panvk.log
+// PanVK loader + unified panvk.log
 //
 
 #include <android/api-level.h>
@@ -25,9 +24,8 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
 static bool turnip_enabled = false;
-static bool panvk_enabled = true;  // default on for Mali-G52 path
+static bool panvk_enabled = false;
 
-// Unified log: writes to panvk.log (app-writable) AND mirrors to logcat under PANVK
 static FILE* panvk_log_fp = NULL;
 
 static void panvk_log_open(void) {
@@ -35,8 +33,6 @@ static void panvk_log_open(void) {
     const char* candidates[] = {
         getenv("MOD_ANDROID_RUNTIME"),
         getenv("TMPDIR"),
-        "/data/data/com.maxjubayeryt.copper.debug/cache",
-        "/data/user/0/com.maxjubayeryt.copper.debug/cache",
         "/data/local/tmp",
         NULL
     };
@@ -63,10 +59,8 @@ static void panvk_log(const char* fmt, ...) {
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
 
-    // always to logcat under PANVK
     __android_log_print(ANDROID_LOG_INFO, "PANVK", "%s", buf);
 
-    // also to file
     panvk_log_open();
     if (panvk_log_fp) {
         fprintf(panvk_log_fp, "%s\n", buf);
@@ -118,11 +112,9 @@ bool load_panvk_vulkan() {
 
     panvk_log("Attempting to load PanVK (libvulkan_panfrost.so)");
 
-    // Prefer the path that Copper places the .so into (MOD_ANDROID_RUNTIME / app_runtime_mod)
     const char* mod_dir = getenv("MOD_ANDROID_RUNTIME");
     const char* native_dir = mojoexec_native_dir;
 
-    // Try several names/locations that previous CI artifacts used
     const char* names[] = {
         "libvulkan_panfrost.so",
         "libvulkan_panfrost-android-aarch64.so",
@@ -130,7 +122,6 @@ bool load_panvk_vulkan() {
         NULL
     };
 
-    // First try direct dlopen from MOD_ANDROID_RUNTIME if set
     if (mod_dir && mod_dir[0]) {
         for (int i = 0; names[i]; i++) {
             char full[512];
@@ -145,7 +136,6 @@ bool load_panvk_vulkan() {
         }
     }
 
-    // Fallback to linker-ns path (same as Turnip)
     if (!linker_ns_load(native_dir ? native_dir : ".")) {
         panvk_log("linker_ns_load failed for %s", native_dir ? native_dir : ".");
         return false;
